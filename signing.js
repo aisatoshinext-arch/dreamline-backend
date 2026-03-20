@@ -3,7 +3,6 @@
 // Compatible with all EVM chains: Ethereum, BNB Chain, Base, Polygon, etc.
 
 const { ethers } = require('ethers');
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
 // Generate or load Dreamline's signing wallet
 // In production this private key is stored in a HSM (Hardware Security Module)

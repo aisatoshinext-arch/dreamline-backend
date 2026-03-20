@@ -2,7 +2,6 @@
 // Monitors agent wallets on BNB Chain for unauthorized transactions
 
 const { ethers } = require('ethers');
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
 let provider;
 let io;

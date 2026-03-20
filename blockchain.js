@@ -3,7 +3,6 @@
 // The backend is now an INDEXER — it reads, not decides
 
 const { ethers } = require('ethers');
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 

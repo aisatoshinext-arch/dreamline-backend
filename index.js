@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const agent = require('./agent');
 const erc8004 = require('./erc8004');
