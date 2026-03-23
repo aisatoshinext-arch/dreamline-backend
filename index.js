@@ -166,7 +166,6 @@ app.post('/proxy/approve', async (req, res) => {
     .from('agent_api_keys')
     .select('*, agents(*)')
     .eq('api_key', apiKey)
-    .eq('active', true)
     .single();
 
   if (!keyData) return res.status(401).json({ error: 'Invalid API key' });
@@ -346,7 +345,6 @@ app.post('/proxy/pay', async (req, res) => {
     .from('agent_api_keys')
     .select('*, agents(*)')
     .eq('api_key', apiKey)
-    .eq('active', true)
     .single();
 
   if (keyError || !keyData) return res.status(401).json({ error: 'Invalid or inactive API key' });
