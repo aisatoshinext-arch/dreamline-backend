@@ -912,12 +912,21 @@ app.post('/onboard', async (req, res) => {
       .single();
 
     if (existing) {
-      const { data: apiKey } = await supabase
+      let { data: apiKey } = await supabase
         .from('agent_api_keys')
         .select('api_key, agent_id')
         .eq('organization_id', existing.id)
         .single();
-      return res.json({ organization_id: existing.id, api_key: apiKey?.api_key });
+      if (!apiKey) {
+        const { data: agent } = await supabase
+          .from('agents')
+          .insert({ name: 'My First Agent', description: 'Default agent', owner_email: email, organization_id: existing.id, status: 'active' })
+          .select().single();
+        const newKey = 'dlk_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+        await supabase.from('agent_api_keys').insert({ agent_id: agent.id, organization_id: existing.id, api_key: newKey });
+        apiKey = { api_key: newKey, agent_id: agent.id };
+      }
+      return res.json({ organization_id: existing.id, api_key: apiKey.api_key, agent_id: apiKey.agent_id });
     }
 
     // Create organization
