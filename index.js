@@ -33,6 +33,22 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Auth middleware - sets req.org_id from API key
+app.use(async (req, res, next) => {
+  const apiKey = req.headers['x-dreamline-key'];
+  if (apiKey) {
+    const { data } = await supabase
+      .from('agent_api_keys')
+      .select('organization_id')
+      .eq('api_key', apiKey)
+      .single();
+    if (data) req.org_id = data.organization_id;
+  }
+  if (!req.org_id) req.org_id = null;
+  next();
+});
+
+
 io.on('connection', (socket) => {
   console.log('[Socket] Client connected:', socket.id);
   socket.on('disconnect', () => {
@@ -205,7 +221,7 @@ app.post('/proxy/approve', async (req, res) => {
 
   if (blocked) {
     await supabase.from('audit_log').insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       user_email: 'dreamline-signer',
       action: 'signature_denied',
       entity_type: 'transaction',
@@ -225,7 +241,7 @@ app.post('/proxy/approve', async (req, res) => {
   });
 
   await supabase.from('audit_log').insert({
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     user_email: 'dreamline-signer',
     action: 'signature_issued',
     entity_type: 'transaction',
@@ -277,7 +293,7 @@ app.post('/proxy/register', async (req, res) => {
   const { data: agentData, error: agentError } = await supabase
     .from('agents')
     .insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       name, description, owner_email, status: 'active',
       erc8004_token_id: erc8004_token_id || null,
       erc8004_chain: erc8004_data.chain,
@@ -308,7 +324,7 @@ app.post('/proxy/register', async (req, res) => {
 
   await supabase.from('agent_api_keys').insert({
     agent_id: agentData.id,
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     api_key,
     name: `${name} API Key`
   });
@@ -346,7 +362,7 @@ app.post('/proxy/pay', async (req, res) => {
   if (!onChainAllowed) {
     const { data: tx } = await supabase.from('transactions').insert({
       agent_id,
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       amount_usd: parseFloat(amount_usd),
       destination, payment_rail: payment_rail || 'x402',
       task_description: task_description || 'Payment request',
@@ -375,7 +391,7 @@ app.post('/proxy/pay', async (req, res) => {
   if (blacklistCheck.blacklisted) {
     const { data: tx } = await supabase.from('transactions').insert({
       agent_id,
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       amount_usd: parseFloat(amount_usd),
       destination, payment_rail: payment_rail || 'x402',
       task_description: task_description || 'Payment request',
@@ -384,7 +400,7 @@ app.post('/proxy/pay', async (req, res) => {
     }).select().single();
 
     await supabase.from('alerts').insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       agent_id, type: 'policy_violation',
       message: `Global blacklist hit: ${destination}`, resolved: false
     });
@@ -446,7 +462,7 @@ app.post('/proxy/pay', async (req, res) => {
 
   const { data: tx } = await supabase.from('transactions').insert({
     agent_id,
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     amount_usd: parseFloat(amount_usd),
     destination, payment_rail: payment_rail || 'x402',
     task_description: task_description || 'Payment request',
@@ -455,7 +471,7 @@ app.post('/proxy/pay', async (req, res) => {
 
   if (blocked) {
     await supabase.from('alerts').insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       agent_id, type: 'policy_violation',
       message: block_reason, resolved: false
     });
@@ -532,7 +548,7 @@ app.post('/ai/suggestions/:agent_id/generate', async (req, res) => {
   const { current_policy } = req.body;
   const suggestions = await ai.generatePolicySuggestions(
     req.params.agent_id,
-    '11111111-1111-1111-1111-111111111111',
+    req.org_id,
     current_policy
   );
   res.json(suggestions);
@@ -543,11 +559,26 @@ app.put('/ai/suggestions/:suggestion_id/accept', async (req, res) => {
   res.json(result);
 });
 
+
+// Helper: get organization_id from API key
+async function getOrgFromKey(req) {
+  const apiKey = req.headers['x-dreamline-key'];
+  if (!apiKey) return null;
+  const { data } = await supabase
+    .from('agent_api_keys')
+    .select('organization_id')
+    .eq('api_key', apiKey)
+    .single();
+  return data?.organization_id || null;
+}
+
 app.get('/agents', async (req, res) => {
+  const org_id = await getOrgFromKey(req);
+  if (!org_id) return res.status(401).json({ error: 'Invalid or missing API key' });
   const { data, error } = await supabase
     .from('agents')
     .select('*, policies (*), transactions (*)')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111');
+    .eq('organization_id', org_id);
   if (error) return res.status(500).json({ error });
   res.json(data);
 });
@@ -574,7 +605,7 @@ app.post('/agents', async (req, res) => {
   const { data: agentData, error: agentError } = await supabase
     .from('agents')
     .insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       name, description, owner_email, status: 'active',
       erc8004_token_id: erc8004_token_id || null,
       erc8004_chain: erc8004_data.chain,
@@ -618,7 +649,7 @@ app.put('/agents/:id/policy', async (req, res) => {
     .single();
   if (error) return res.status(500).json({ error });
   await supabase.from('audit_log').insert({
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     user_email: 'admin@acme.com',
     action: 'policy_updated',
     entity_type: 'policy',
@@ -633,7 +664,7 @@ app.get('/transactions', async (req, res) => {
   let query = supabase
     .from('transactions')
     .select('*, agents(name)')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111')
+    .eq('organization_id', req.org_id)
     .order('created_at', { ascending: false });
   if (agent_id) query = query.eq('agent_id', agent_id);
   if (status) query = query.eq('status', status);
@@ -651,7 +682,7 @@ app.put('/transactions/:id/approve', async (req, res) => {
     .single();
   if (error) return res.status(500).json({ error });
   await supabase.from('audit_log').insert({
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     user_email: 'admin@acme.com',
     action: 'transaction_approved',
     entity_type: 'transaction',
@@ -670,7 +701,7 @@ app.put('/transactions/:id/reject', async (req, res) => {
     .single();
   if (error) return res.status(500).json({ error });
   await supabase.from('audit_log').insert({
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     user_email: 'admin@acme.com',
     action: 'transaction_rejected',
     entity_type: 'transaction',
@@ -684,7 +715,7 @@ app.get('/alerts', async (req, res) => {
   const { data, error } = await supabase
     .from('alerts')
     .select('*, agents(name)')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111')
+    .eq('organization_id', req.org_id)
     .eq('resolved', false)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error });
@@ -704,7 +735,7 @@ app.get('/overview', async (req, res) => {
   const { data: transactions, error } = await supabase
     .from('transactions')
     .select('id, amount_usd, status, agent_id, created_at, agents(name)')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111');
+    .eq('organization_id', req.org_id);
   if (error) return res.status(500).json({ error });
   const total = transactions.reduce((sum, t) => sum + parseFloat(t.amount_usd), 0);
   res.json({
@@ -727,7 +758,7 @@ app.get('/chart', async (req, res) => {
   const { data: transactions, error } = await supabase
     .from('transactions')
     .select('amount_usd, status, created_at')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111')
+    .eq('organization_id', req.org_id)
     .gte('created_at', days[0]);
   if (error) return res.status(500).json({ error });
   const chartData = days.map(day => {
@@ -744,7 +775,7 @@ app.get('/audit', async (req, res) => {
   const { data, error } = await supabase
     .from('audit_log')
     .select('*')
-    .eq('organization_id', '11111111-1111-1111-1111-111111111111')
+    .eq('organization_id', req.org_id)
     .order('created_at', { ascending: false })
     .limit(50);
   if (error) return res.status(500).json({ error });
@@ -767,10 +798,10 @@ app.get('/agent/status', (req, res) => {
 
 app.post('/reset', async (req, res) => {
   agent.stop();
-  await supabase.from('transactions').delete().eq('organization_id', '11111111-1111-1111-1111-111111111111');
-  await supabase.from('alerts').delete().eq('organization_id', '11111111-1111-1111-1111-111111111111');
-  await supabase.from('audit_log').delete().eq('organization_id', '11111111-1111-1111-1111-111111111111');
-  await supabase.from('policy_suggestions').delete().eq('organization_id', '11111111-1111-1111-1111-111111111111');
+  await supabase.from('transactions').delete().eq('organization_id', req.org_id);
+  await supabase.from('alerts').delete().eq('organization_id', req.org_id);
+  await supabase.from('audit_log').delete().eq('organization_id', req.org_id);
+  await supabase.from('policy_suggestions').delete().eq('organization_id', req.org_id);
   await supabase.from('policies').update({
     daily_budget_usd: 500,
     single_tx_limit_usd: 20,
@@ -788,11 +819,11 @@ app.post('/reset', async (req, res) => {
     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
   ]);
   await supabase.from('transactions').insert([
-    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: '11111111-1111-1111-1111-111111111111', amount_usd: 0.01, destination: 'api.coingecko.com', payment_rail: 'x402', task_description: 'Fetch BTC/USD price', status: 'approved' },
-    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: '11111111-1111-1111-1111-111111111111', amount_usd: 1.50, destination: 'api.openai.com', payment_rail: 'openai', task_description: 'Generate market summary report', status: 'approved' },
-    { agent_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', organization_id: '11111111-1111-1111-1111-111111111111', amount_usd: 250.00, destination: 'uniswap.org', payment_rail: 'x402', task_description: 'Execute ETH/USDC swap', status: 'approved' },
-    { agent_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', organization_id: '11111111-1111-1111-1111-111111111111', amount_usd: 350.00, destination: 'unknown-exchange.io', payment_rail: 'x402', task_description: 'Execute arbitrage trade', status: 'blocked', block_reason: 'Unauthorized destination: unknown-exchange.io' },
-    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: '11111111-1111-1111-1111-111111111111', amount_usd: 75.00, destination: 'api.anthropic.com', payment_rail: 'anthropic', task_description: 'Deep research analysis', status: 'pending_approval' }
+    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: req.org_id, amount_usd: 0.01, destination: 'api.coingecko.com', payment_rail: 'x402', task_description: 'Fetch BTC/USD price', status: 'approved' },
+    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: req.org_id, amount_usd: 1.50, destination: 'api.openai.com', payment_rail: 'openai', task_description: 'Generate market summary report', status: 'approved' },
+    { agent_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', organization_id: req.org_id, amount_usd: 250.00, destination: 'uniswap.org', payment_rail: 'x402', task_description: 'Execute ETH/USDC swap', status: 'approved' },
+    { agent_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', organization_id: req.org_id, amount_usd: 350.00, destination: 'unknown-exchange.io', payment_rail: 'x402', task_description: 'Execute arbitrage trade', status: 'blocked', block_reason: 'Unauthorized destination: unknown-exchange.io' },
+    { agent_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', organization_id: req.org_id, amount_usd: 75.00, destination: 'api.anthropic.com', payment_rail: 'anthropic', task_description: 'Deep research analysis', status: 'pending_approval' }
   ]);
   res.json({ success: true, message: 'Demo reset successfully' });
 });
@@ -804,7 +835,7 @@ app.post('/simulate', async (req, res) => {
   if (blacklistCheck.blacklisted) {
     const { data: tx } = await supabase.from('transactions').insert({
       agent_id,
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       amount_usd: parseFloat(amount_usd),
       destination, payment_rail: payment_rail || 'x402',
       task_description, status: 'blocked',
@@ -812,7 +843,7 @@ app.post('/simulate', async (req, res) => {
     }).select().single();
 
     await supabase.from('alerts').insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       agent_id, type: 'policy_violation',
       message: `Global blacklist hit: ${destination} — ${blacklistCheck.reason}`,
       resolved: false
@@ -871,7 +902,7 @@ app.post('/simulate', async (req, res) => {
 
   const { data: tx, error } = await supabase.from('transactions').insert({
     agent_id,
-    organization_id: '11111111-1111-1111-1111-111111111111',
+    organization_id: req.org_id,
     amount_usd: parseFloat(amount_usd),
     destination, payment_rail: payment_rail || 'x402',
     task_description, status, block_reason
@@ -881,7 +912,7 @@ app.post('/simulate', async (req, res) => {
 
   if (blocked) {
     await supabase.from('alerts').insert({
-      organization_id: '11111111-1111-1111-1111-111111111111',
+      organization_id: req.org_id,
       agent_id, type: 'policy_violation',
       message: block_reason, resolved: false
     });
