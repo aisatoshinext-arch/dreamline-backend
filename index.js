@@ -589,7 +589,7 @@ app.get('/agents/:id', async (req, res) => {
     .eq('id', req.params.id)
     .single();
   if (error) return res.status(500).json({ error });
-  res.json(data);
+  res.json(data || []);
 });
 
 app.post('/agents', async (req, res) => {
@@ -669,7 +669,7 @@ app.get('/transactions', async (req, res) => {
   if (status) query = query.eq('status', status);
   const { data, error } = await query;
   if (error) return res.status(500).json({ error });
-  res.json(data);
+  res.json(data || []);
 });
 
 app.put('/transactions/:id/approve', async (req, res) => {
@@ -711,6 +711,7 @@ app.put('/transactions/:id/reject', async (req, res) => {
 });
 
 app.get('/alerts', async (req, res) => {
+  if (!req.org_id) return res.json([]);
   const { data, error } = await supabase
     .from('alerts')
     .select('*, agents(name)')
@@ -718,7 +719,7 @@ app.get('/alerts', async (req, res) => {
     .eq('resolved', false)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error });
-  res.json(data);
+  res.json(data || []);
 });
 
 app.put('/alerts/:id/resolve', async (req, res) => {
@@ -778,7 +779,7 @@ app.get('/audit', async (req, res) => {
     .order('created_at', { ascending: false })
     .limit(50);
   if (error) return res.status(500).json({ error });
-  res.json(data);
+  res.json(data || []);
 });
 
 app.post('/agent/start', (req, res) => {
