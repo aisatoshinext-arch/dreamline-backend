@@ -993,3 +993,88 @@ app.post('/onboard', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ============================================================
+// PROXY PAY — Core endpoint for agent payments
+// ============================================================
+
+app.post('/proxy/pay', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-dreamline-key'];
+    if (!apiKey) return res.status(401).json({ error: 'API key required' });
+
+    const { data: keyData } = await supabase
+      .from('agent_api_keys')
+      .select('agent_id, organization_id')
+      .eq('api_key', apiKey)
+      .single();
+
+    if (!keyData) return res.status(401).json({ error: 'Invalid API key' });
+
+    const { amount_usd, destination, task_description, payment_rail } = req.body;
+    if (!amount_usd || !destination) return res.status(400).json({ error: 'amount_usd and destination required' });
+
+    const { data: policy } = await supabase
+      .from('policies')
+      .select('*')
+      .eq('agent_id', keyData.agent_id)
+      .single();
+
+    const { data: blacklist } = await supabase
+      .from('global_blacklist')
+      .select('destination')
+      .eq('destination', destination)
+      .single();
+
+    if (blacklist) {
+      await supabase.from('transactions').insert({
+        agent_id: keyData.agent_id,
+        organization_id: keyData.organization_id,
+        amount_usd, destination, task_description,
+        payment_rail: payment_rail || 'unknown',
+        status: 'blocked',
+        block_reason: `Blacklisted destination: ${destination}`
+      });
+      return res.json({ approved: false, block_reason: `Destination ${destination} is blacklisted` });
+    }
+
+    if (policy) {
+      if (amount_usd > policy.single_tx_limit_usd) {
+        await supabase.from('transactions').insert({
+          agent_id: keyData.agent_id,
+          organization_id: keyData.organization_id,
+          amount_usd, destination, task_description,
+          payment_rail: payment_rail || 'unknown',
+          status: 'blocked',
+          block_reason: `Exceeds single tx limit of $${policy.single_tx_limit_usd}`
+        });
+        return res.json({ approved: false, block_reason: `Amount exceeds limit of $${policy.single_tx_limit_usd}` });
+      }
+
+      if (policy.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
+        await supabase.from('transactions').insert({
+          agent_id: keyData.agent_id,
+          organization_id: keyData.organization_id,
+          amount_usd, destination, task_description,
+          payment_rail: payment_rail || 'unknown',
+          status: 'blocked',
+          block_reason: `Unauthorized destination: ${destination}`
+        });
+        return res.json({ approved: false, block_reason: `Destination ${destination} not in whitelist` });
+      }
+    }
+
+    const { data: tx } = await supabase.from('transactions').insert({
+      agent_id: keyData.agent_id,
+      organization_id: keyData.organization_id,
+      amount_usd, destination, task_description,
+      payment_rail: payment_rail || 'unknown',
+      status: 'approved'
+    }).select().single();
+
+    res.json({ approved: true, transaction_id: tx.id, message: 'Payment authorized by Dreamline' });
+  } catch (err) {
+    console.error('[proxy/pay]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
