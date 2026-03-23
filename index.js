@@ -894,3 +894,62 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Dreamline backend running on port ${PORT}`);
 });
+
+// ============================================================
+// ONBOARDING ENDPOINT
+// ============================================================
+
+app.post('/onboard', async (req, res) => {
+  try {
+    const { user_id, email, name } = req.body;
+    if (!user_id || !email) return res.status(400).json({ error: 'user_id and email required' });
+
+    // Check if already onboarded
+    const { data: existing } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_user_id', user_id)
+      .single();
+
+    if (existing) {
+      const { data: apiKey } = await supabase
+        .from('agent_api_keys')
+        .select('api_key, agent_id')
+        .eq('organization_id', existing.id)
+        .single();
+      return res.json({ organization_id: existing.id, api_key: apiKey?.api_key });
+    }
+
+    // Create organization
+    const { data: org } = await supabase
+      .from('organizations')
+      .insert({ name: name || email, owner_user_id: user_id, owner_email: email })
+      .select()
+      .single();
+
+    // Create default agent
+    const { data: agent } = await supabase
+      .from('agents')
+      .insert({
+        name: 'My First Agent',
+        description: 'Default agent',
+        owner_email: email,
+        organization_id: org.id,
+        status: 'active'
+      })
+      .select()
+      .single();
+
+    // Generate API key
+    const apiKey = 'dlk_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
+    await supabase
+      .from('agent_api_keys')
+      .insert({ agent_id: agent.id, organization_id: org.id, api_key: apiKey });
+
+    res.json({ organization_id: org.id, agent_id: agent.id, api_key: apiKey });
+  } catch (err) {
+    console.error('[Onboard]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
