@@ -456,7 +456,7 @@ app.post('/proxy/pay', async (req, res) => {
     block_reason = `Daily budget exceeded: $${spentToday} already spent of $${policy.daily_budget_usd}`;
   }
 
-  const status = blocked ? 'blocked' : (parseFloat(amount_usd) > policy.require_approval_above_usd ? 'pending_approval' : 'approved');
+  const status = blocked ? 'blocked' : (policy && parseFloat(amount_usd) > policy.require_approval_above_usd ? 'pending_approval' : 'approved');
 
   const { data: tx } = await supabase.from('transactions').insert({
     agent_id,
@@ -896,7 +896,7 @@ app.post('/simulate', async (req, res) => {
     block_reason = `Daily budget exceeded: $${spentToday} already spent of $${policy.daily_budget_usd}`;
   }
 
-  const status = blocked ? 'blocked' : (parseFloat(amount_usd) > policy.require_approval_above_usd ? 'pending_approval' : 'approved');
+  const status = blocked ? 'blocked' : (policy && parseFloat(amount_usd) > policy.require_approval_above_usd ? 'pending_approval' : 'approved');
 
   const { data: tx, error } = await supabase.from('transactions').insert({
     agent_id,
