@@ -435,7 +435,7 @@ app.post('/proxy/pay', async (req, res) => {
   }
 
   const { data: policy } = await supabase.from('policies').select('*').eq('agent_id', agent_id).single();
-  if (!policy) return res.status(404).json({ error: 'Policy not found for this agent' });
+  // policy can be null - will use defaults
 
   const today = new Date().toISOString().split('T')[0];
   const { data: todayTxs } = await supabase.from('transactions').select('amount_usd').eq('agent_id', agent_id).eq('status', 'approved').gte('created_at', today);
