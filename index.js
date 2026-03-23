@@ -444,16 +444,16 @@ app.post('/proxy/pay', async (req, res) => {
   let blocked = false;
   let block_reason = null;
 
-  if (policy.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
+  if (policy?.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
     blocked = true;
     block_reason = `Unauthorized destination: ${destination}`;
     await ai.addToGlobalBlacklist(destination, 'Policy violation');
   }
-  if (!blocked && parseFloat(amount_usd) > policy.single_tx_limit_usd) {
+  if (!blocked && policy && parseFloat(amount_usd) > policy.single_tx_limit_usd) {
     blocked = true;
     block_reason = `Amount $${amount_usd} exceeds single tx limit of $${policy.single_tx_limit_usd}`;
   }
-  if (!blocked && (spentToday + parseFloat(amount_usd)) > policy.daily_budget_usd) {
+  if (!blocked && policy && (spentToday + parseFloat(amount_usd)) > policy.daily_budget_usd) {
     blocked = true;
     block_reason = `Daily budget exceeded: $${spentToday} already spent of $${policy.daily_budget_usd}`;
   }
@@ -884,16 +884,16 @@ app.post('/simulate', async (req, res) => {
   let blocked = false;
   let block_reason = null;
 
-  if (policy.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
+  if (policy?.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
     blocked = true;
     block_reason = `Unauthorized destination: ${destination}`;
     await ai.addToGlobalBlacklist(destination, 'Policy violation');
   }
-  if (!blocked && parseFloat(amount_usd) > policy.single_tx_limit_usd) {
+  if (!blocked && policy && parseFloat(amount_usd) > policy.single_tx_limit_usd) {
     blocked = true;
     block_reason = `Amount $${amount_usd} exceeds single tx limit of $${policy.single_tx_limit_usd}`;
   }
-  if (!blocked && (spentToday + parseFloat(amount_usd)) > policy.daily_budget_usd) {
+  if (!blocked && policy && (spentToday + parseFloat(amount_usd)) > policy.daily_budget_usd) {
     blocked = true;
     block_reason = `Daily budget exceeded: $${spentToday} already spent of $${policy.daily_budget_usd}`;
   }
