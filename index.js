@@ -573,14 +573,13 @@ async function getOrgFromKey(req) {
 }
 
 app.get('/agents', async (req, res) => {
-  const org_id = await getOrgFromKey(req);
-  if (!org_id) return res.status(401).json({ error: 'Invalid or missing API key' });
+  if (!req.org_id) return res.json([]);
   const { data, error } = await supabase
     .from('agents')
     .select('*, policies (*), transactions (*)')
-    .eq('organization_id', org_id);
+    .eq('organization_id', req.org_id);
   if (error) return res.status(500).json({ error });
-  res.json(data);
+  res.json(data || []);
 });
 
 app.get('/agents/:id', async (req, res) => {
