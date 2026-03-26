@@ -920,6 +920,176 @@ app.post('/simulate', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
+
+// ============================================================
+// DREAMLINE POLICY FACILITATOR — x402 compatible
+// ============================================================
+
+// POST /facilitator/verify
+// Called by x402 clients before creating a payment payload
+// Checks on-chain blacklist + agent policy
+// Returns { isValid: true/false, invalidReason? }
+
+app.post('/facilitator/verify', async (req, res) => {
+  try {
+    const { payload, paymentRequirements } = req.body;
+    if (!payload || !paymentRequirements) {
+      return res.json({ isValid: false, invalidReason: 'Missing payload or paymentRequirements' });
+    }
+
+    const destination = paymentRequirements.payTo || payload.to || '';
+    const amount_usd = parseFloat(paymentRequirements.maxAmountRequired || payload.value || 0) / 1e6; // USDC has 6 decimals
+
+    // 1. Check on-chain blacklist via DreamlineRegistry
+    const { ethers } = require('ethers');
+    const provider = new ethers.JsonRpcProvider('https://bsc-testnet.public.blastapi.io');
+    const registryABI = ['function isBlacklisted(string memory destination) external view returns (bool)'];
+    const registry = new ethers.Contract('0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE', registryABI, provider);
+
+    let onchainBlocked = false;
+    try {
+      onchainBlocked = await registry.isBlacklisted(destination);
+    } catch (e) {
+      console.error('[Facilitator/verify] On-chain check failed:', e.message);
+    }
+
+    if (onchainBlocked) {
+      return res.json({
+        isValid: false,
+        invalidReason: `On-chain blacklist: ${destination} blocked by DreamlineRegistry on BNB Chain`,
+        onchain: true
+      });
+    }
+
+    // 2. Check Supabase blacklist (fast path)
+    const { data: blacklist } = await supabase
+      .from('global_blacklist')
+      .select('destination')
+      .eq('destination', destination)
+      .single();
+
+    if (blacklist) {
+      return res.json({
+        isValid: false,
+        invalidReason: `Policy blacklist: ${destination} is blocked`,
+        onchain: false
+      });
+    }
+
+    // 3. Check agent policy if X-Dreamline-Key provided
+    const apiKey = req.headers['x-dreamline-key'];
+    if (apiKey) {
+      const { data: keyData } = await supabase
+        .from('agent_api_keys')
+        .select('agent_id, organization_id')
+        .eq('api_key', apiKey)
+        .single();
+
+      if (keyData) {
+        const { data: policy } = await supabase
+          .from('policies')
+          .select('*')
+          .eq('agent_id', keyData.agent_id)
+          .single();
+
+        if (policy) {
+          if (amount_usd > policy.single_tx_limit_usd) {
+            return res.json({
+              isValid: false,
+              invalidReason: `Policy: amount $${amount_usd} exceeds limit of $${policy.single_tx_limit_usd}`
+            });
+          }
+
+          if (policy.whitelist_destinations?.length > 0 && !policy.whitelist_destinations.includes(destination)) {
+            return res.json({
+              isValid: false,
+              invalidReason: `Policy: destination ${destination} not in whitelist`
+            });
+          }
+        }
+      }
+    }
+
+    // All checks passed
+    res.json({ isValid: true });
+
+  } catch (err) {
+    console.error('[Facilitator/verify]', err);
+    res.json({ isValid: false, invalidReason: err.message });
+  }
+});
+
+// POST /facilitator/settle
+// Called after verification to settle on-chain
+// Proxies to Coinbase x402 facilitator after Dreamline approval
+
+app.post('/facilitator/settle', async (req, res) => {
+  try {
+    const { payload, paymentRequirements } = req.body;
+    if (!payload || !paymentRequirements) {
+      return res.status(400).json({ error: 'Missing payload or paymentRequirements' });
+    }
+
+    // Proxy to Coinbase facilitator for actual settlement
+    const response = await fetch('https://x402.org/facilitator/settle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload, paymentRequirements })
+    });
+
+    const result = await response.json();
+
+    // Log settlement in Supabase (audit trail only — not in critical path)
+    const apiKey = req.headers['x-dreamline-key'];
+    if (apiKey && result.success) {
+      const { data: keyData } = await supabase
+        .from('agent_api_keys')
+        .select('agent_id, organization_id')
+        .eq('api_key', apiKey)
+        .single();
+
+      if (keyData) {
+        await supabase.from('transactions').insert({
+          agent_id: keyData.agent_id,
+          organization_id: keyData.organization_id,
+          amount_usd: parseFloat(paymentRequirements.maxAmountRequired || 0) / 1e6,
+          destination: paymentRequirements.payTo || '',
+          payment_rail: 'x402',
+          status: 'approved',
+          task_description: 'x402 settlement'
+        });
+      }
+    }
+
+    res.json(result);
+
+  } catch (err) {
+    console.error('[Facilitator/settle]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /facilitator/supported
+// Returns supported networks and schemes — x402 ecosystem compatibility
+
+app.get('/facilitator/supported', (req, res) => {
+  res.json({
+    facilitator: 'Dreamline Policy Facilitator',
+    version: '1.0.0',
+    description: 'x402-compatible facilitator with on-chain spend governance',
+    supported: [
+      { network: 'base', scheme: 'exact', token: 'USDC' },
+      { network: 'base-sepolia', scheme: 'exact', token: 'USDC' },
+    ],
+    governance: {
+      blacklist_contract: '0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE',
+      blacklist_chain: 'BNB Chain Testnet',
+      signer: '0x527da185dF7F4888E1cA1d8dA0031c80e4074472'
+    }
+  });
+});
+
 server.listen(PORT, () => {
   console.log(`Dreamline backend running on port ${PORT}`);
 });
