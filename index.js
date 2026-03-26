@@ -943,7 +943,7 @@ app.post('/facilitator/verify', async (req, res) => {
 
     // 1. Check on-chain blacklist via DreamlineRegistry
     const { ethers } = require('ethers');
-    const provider = new ethers.JsonRpcProvider('https://bsc-testnet.public.blastapi.io');
+    const provider = new ethers.JsonRpcProvider('https://bsc-testnet-rpc.publicnode.com');
     const registryABI = ['function isDestinationAllowed(string memory destination) external view returns (bool)'];
     const registry = new ethers.Contract('0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE', registryABI, provider);
 
