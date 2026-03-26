@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node -e \"const assert=require('assert'); fetch('https://dreamline-backend.onrender.com/health').then(r=>r.json()).then(d=>{assert.equal(d.status,'ok'); console.log('\u2705 Health check passed');})\""
   },
   "keywords": [],
   "author": "",

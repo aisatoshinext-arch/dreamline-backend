@@ -14,7 +14,7 @@ const monitor = require('./monitor');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+  cors: { origin: ['https://dreamline-jade.vercel.app', 'https://dreamline-backend.onrender.com', 'http://localhost:3000', 'http://localhost:3001'], methods: ['GET', 'POST'] }
 });
 
 agent.setIO(io);
@@ -27,7 +27,7 @@ const supabase = createClient(
 monitor.init(io, supabase);
 
 app.use(cors({
-  origin: '*',
+  origin: ['https://dreamline-jade.vercel.app', 'https://dreamline-backend.onrender.com', 'http://localhost:3000', 'http://localhost:3001'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Dreamline-Key']
 }));
