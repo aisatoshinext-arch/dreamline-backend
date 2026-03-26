@@ -947,18 +947,22 @@ app.post('/facilitator/verify', async (req, res) => {
     const registryABI = ['function isDestinationAllowed(string memory destination) external view returns (bool)'];
     const registry = new ethers.Contract('0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE', registryABI, provider);
 
-    let onchainAllowed = true;
     try {
-      onchainAllowed = await registry.isDestinationAllowed(destination);
+      const onchainAllowed = await registry.isDestinationAllowed(destination);
+      if (!onchainAllowed) {
+        return res.json({
+          isValid: false,
+          invalidReason: `On-chain blacklist: ${destination} blocked by DreamlineRegistry on BNB Chain`,
+          onchain: true
+        });
+      }
     } catch (e) {
+      // On-chain check failed — fail closed for security
       console.error('[Facilitator/verify] On-chain check failed:', e.message);
-    }
-
-    if (!onchainAllowed) {
       return res.json({
         isValid: false,
-        invalidReason: `On-chain blacklist: ${destination} blocked by DreamlineRegistry on BNB Chain`,
-        onchain: true
+        invalidReason: `On-chain check unavailable: ${e.message}`,
+        onchain: false
       });
     }
 
