@@ -962,22 +962,10 @@ app.post('/facilitator/verify', async (req, res) => {
       });
     }
 
-    // 2. Check Supabase blacklist (fast path)
-    const { data: blacklist } = await supabase
-      .from('global_blacklist')
-      .select('destination')
-      .eq('destination', destination)
-      .single();
+    // NOTE: Supabase blacklist removed — on-chain is the only trust layer
+    // Supabase is used only for audit log and dashboard (not in critical path)
 
-    if (blacklist) {
-      return res.json({
-        isValid: false,
-        invalidReason: `Policy blacklist: ${destination} is blocked`,
-        onchain: false
-      });
-    }
-
-    // 3. Check agent policy if X-Dreamline-Key provided
+    // 2. Check agent policy if X-Dreamline-Key provided
     const apiKey = req.headers['x-dreamline-key'];
     if (apiKey) {
       const { data: keyData } = await supabase
