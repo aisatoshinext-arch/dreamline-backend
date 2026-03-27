@@ -1075,8 +1075,10 @@ app.get('/facilitator/supported', (req, res) => {
     version: '1.0.0',
     description: 'x402-compatible facilitator with on-chain spend governance',
     supported: [
-      { network: 'base', scheme: 'exact', token: 'USDC' },
-      { network: 'base-sepolia', scheme: 'exact', token: 'USDC' },
+      { network: 'base', scheme: 'exact', token: 'USDC', facilitator: 'Coinbase CDP' },
+      { network: 'base-sepolia', scheme: 'exact', token: 'USDC', facilitator: 'Coinbase CDP' },
+      { network: 'bsc', scheme: 'exact', token: 'USDC', facilitator: 'AEON' },
+      { network: 'eip155:56', scheme: 'exact', token: 'USDC', facilitator: 'AEON' },
     ],
     governance: {
       blacklist_contract: '0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE',
