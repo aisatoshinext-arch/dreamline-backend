@@ -1090,9 +1090,9 @@ app.get('/facilitator/supported', (req, res) => {
 // Any agent can call /proxy/coingecko/* to get CoinGecko data
 // with Dreamline policy enforcement before each request
 
-app.get('/proxy/coingecko/:path(*)', async (req, res) => {
+app.get(/^\/proxy\/coingecko(\/.*)?$/, async (req, res) => {
   try {
-    const path = req.params.path || '';
+    const path = (req.params[0] || '').replace(/^\//, '');
     const query = new URLSearchParams(req.query).toString();
     const destination = 'api.coingecko.com';
 
