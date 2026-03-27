@@ -1023,8 +1023,12 @@ app.post('/facilitator/settle', async (req, res) => {
       return res.status(400).json({ error: 'Missing payload or paymentRequirements' });
     }
 
-    // Proxy to Coinbase facilitator for actual settlement
-    const response = await fetch('https://x402.org/facilitator/settle', {
+    // Route to AEON for BNB Chain, Coinbase for Base
+    const network = req.body?.paymentRequirements?.network || req.body?.payload?.network || '';
+    const isBNB = network === '56' || network === 'bsc' || network === 'eip155:56';
+    const facilitatorUrl = isBNB ? 'https://facilitator.aeon.xyz/settle' : 'https://x402.org/facilitator/settle';
+    console.log('[Facilitator/settle] Routing to:', facilitatorUrl, '(network:', network, ')');
+    const response = await fetch(facilitatorUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ payload, paymentRequirements })
