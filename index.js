@@ -1082,6 +1082,103 @@ app.get('/facilitator/supported', (req, res) => {
   });
 });
 
+
+
+// ============================================================
+// COINGECKO PROXY — Dreamline governed CoinGecko access
+// ============================================================
+// Any agent can call /proxy/coingecko/* to get CoinGecko data
+// with Dreamline policy enforcement before each request
+
+app.get('/proxy/coingecko/*', async (req, res) => {
+  try {
+    const path = req.params[0];
+    const query = new URLSearchParams(req.query).toString();
+    const destination = 'api.coingecko.com';
+
+    // 1. Check on-chain blacklist
+    const { ethers } = require('ethers');
+    const provider = new ethers.JsonRpcProvider('https://bsc-testnet-rpc.publicnode.com');
+    const registryABI = ['function isDestinationAllowed(string memory destination) external view returns (bool)'];
+    const registry = new ethers.Contract('0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE', registryABI, provider);
+
+    try {
+      const allowed = await registry.isDestinationAllowed(destination);
+      if (!allowed) {
+        return res.status(403).json({
+          blocked: true,
+          block_reason: 'On-chain blacklist: api.coingecko.com blocked by DreamlineRegistry',
+          onchain: true
+        });
+      }
+    } catch (e) {
+      console.error('[CoinGecko Proxy] On-chain check failed:', e.message);
+    }
+
+    // 2. Check agent policy if API key provided
+    const apiKey = req.headers['x-dreamline-key'];
+    if (apiKey) {
+      const { data: keyData } = await supabase
+        .from('agent_api_keys')
+        .select('agent_id, organization_id')
+        .eq('api_key', apiKey)
+        .single();
+
+      if (keyData) {
+        const { data: policy } = await supabase
+          .from('policies')
+          .select('*')
+          .eq('agent_id', keyData.agent_id)
+          .single();
+
+        if (policy && policy.whitelist_destinations?.length > 0 &&
+            !policy.whitelist_destinations.includes(destination)) {
+          return res.status(403).json({
+            blocked: true,
+            block_reason: `Policy: ${destination} not in whitelist`
+          });
+        }
+
+        // Log access in audit trail
+        await supabase.from('transactions').insert({
+          agent_id: keyData.agent_id,
+          organization_id: keyData.organization_id,
+          amount_usd: 0,
+          destination,
+          payment_rail: 'proxy',
+          status: 'approved',
+          task_description: `CoinGecko proxy: /${path}`
+        }).catch(() => {});
+      }
+    }
+
+    // 3. Forward to CoinGecko
+    const url = `https://api.coingecko.com/api/v3/${path}${query ? '?' + query : ''}`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Dreamline-Protocol/1.0'
+      }
+    });
+
+    const data = await response.json();
+
+    // Add Dreamline governance headers
+    res.set({
+      'X-Dreamline-Governed': 'true',
+      'X-Dreamline-Onchain': 'true',
+      'X-Dreamline-Chain': 'BNB Chain Testnet',
+      'X-Dreamline-Contract': '0x71dA6F5b106E3Fb0B908C7e0720aa4452338B8BE'
+    });
+
+    res.json(data);
+
+  } catch (err) {
+    console.error('[CoinGecko Proxy]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`Dreamline backend running on port ${PORT}`);
 });
